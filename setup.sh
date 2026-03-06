@@ -905,6 +905,14 @@ show_summary() {
   echo "    2. Check status:         openclaw status"
   echo "    3. Open dashboard:       openclaw dashboard"
   echo ""
+  echo -e "  ${BOLD}Ecosystem Tools:${NC}"
+  if [[ "${INSTALL_CLAWMETRY:-N}" =~ ^[Yy] ]]; then
+    echo "    • Clawmetry installed — run: clawmetry (opens localhost:8900)"
+  fi
+  if [[ "${INSTALL_CLAWSEC:-N}" =~ ^[Yy] ]]; then
+    echo "    • ClawSec suite installed — Soul Guardian + advisory feed"
+  fi
+  echo ""
   echo -e "  ${BOLD}Security:${NC}"
   echo "    • API keys stored in $ENV_FILE (600 permissions)"
   echo "    • Config uses \${VAR} references — no plaintext keys"
@@ -944,6 +952,66 @@ main() {
   generate_config
   deploy_workspaces
   install_octave
+  echo ""
+
+  # Offer Clawmetry install
+  echo -e "${BOLD}--- Observability (Optional) ---${NC}"
+  echo ""
+  info "Clawmetry is a free observability dashboard for OpenClaw agents."
+  info "Shows token costs, sessions, crons, live message flow. Zero config."
+  echo ""
+  ask "Install Clawmetry? [Y/n]"
+  read -r INSTALL_CLAWMETRY
+  INSTALL_CLAWMETRY="${INSTALL_CLAWMETRY:-Y}"
+
+  if [[ "$INSTALL_CLAWMETRY" =~ ^[Yy] ]]; then
+    if command -v pip &>/dev/null || command -v pip3 &>/dev/null; then
+      PIP_CMD="$(command -v pip3 || command -v pip)"
+      "$PIP_CMD" install --break-system-packages clawmetry 2>/dev/null \
+        || "$PIP_CMD" install --user clawmetry 2>/dev/null \
+        || warn "Could not install clawmetry via pip. Install manually: pip install clawmetry"
+      command -v clawmetry &>/dev/null && success "Clawmetry installed. Run: clawmetry" \
+        || info "Clawmetry installed. Run: python3 -m clawmetry"
+    else
+      warn "pip not found. Install clawmetry manually: pip install clawmetry"
+    fi
+  fi
+
+  # Offer ClawSec install
+  echo ""
+  echo -e "${BOLD}--- Security Suite (Optional) ---${NC}"
+  echo ""
+  info "ClawSec provides file integrity protection (Soul Guardian),"
+  info "advisory feed monitoring, and malicious skill detection."
+  echo ""
+  ask "Install ClawSec security suite? [Y/n]"
+  read -r INSTALL_CLAWSEC
+  INSTALL_CLAWSEC="${INSTALL_CLAWSEC:-Y}"
+
+  if [[ "$INSTALL_CLAWSEC" =~ ^[Yy] ]]; then
+    CLAWSEC_TMP="$(mktemp -d)"
+    if git clone --depth 1 https://github.com/prompt-security/clawsec.git "$CLAWSEC_TMP" 2>/dev/null; then
+      SKILLS_DIR="$OPENCLAW_DIR/skills"
+      mkdir -p "$SKILLS_DIR"
+      cp -r "$CLAWSEC_TMP/skills/clawsec-suite" "$SKILLS_DIR/" 2>/dev/null
+      cp -r "$CLAWSEC_TMP/skills/soul-guardian" "$SKILLS_DIR/" 2>/dev/null
+      cp -r "$CLAWSEC_TMP/skills/clawsec-feed" "$SKILLS_DIR/" 2>/dev/null
+      rm -rf "$CLAWSEC_TMP"
+
+      # Initialize soul-guardian baselines
+      if [ -f "$SKILLS_DIR/soul-guardian/scripts/soul_guardian.py" ]; then
+        python3 "$SKILLS_DIR/soul-guardian/scripts/soul_guardian.py" init \
+          --actor setup --note "initial baseline" 2>/dev/null \
+          && success "Soul Guardian baselines initialized" \
+          || warn "Soul Guardian init failed — run manually after setup"
+      fi
+
+      success "ClawSec suite installed to $SKILLS_DIR"
+    else
+      warn "Could not clone ClawSec. Install manually: git clone https://github.com/prompt-security/clawsec.git"
+    fi
+  fi
+
   show_summary
 }
 

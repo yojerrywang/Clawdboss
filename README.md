@@ -69,6 +69,7 @@ clawdboss/
 └── docs/
     ├── security.md             # Security architecture + WAL Protocol overview
     ├── customization.md        # How to customize your setup
+    ├── recommended-tools.md    # Vetted ecosystem tools (Clawmetry, ClawSec)
     └── octave.md               # OCTAVE protocol guide
 ```
 
@@ -93,6 +94,15 @@ All agents come with:
 - Relentless resourcefulness + VBR (Verify Before Reporting)
 
 See [docs/security.md](docs/security.md) for the full security architecture.
+
+## Recommended Ecosystem Tools
+
+Clawdboss has been tested with these vetted community tools:
+
+- **[Clawmetry](https://clawmetry.com)** — Real-time observability dashboard. Token costs, sessions, crons, live message flow. `pip install clawmetry && clawmetry` (free, MIT)
+- **[ClawSec](https://github.com/prompt-security/clawsec)** — Security suite from Prompt Security. File integrity protection (Soul Guardian), advisory feed monitoring, malicious skill detection. (free, MIT)
+
+See [docs/recommended-tools.md](docs/recommended-tools.md) for install guides.
 
 ## Requirements
 
