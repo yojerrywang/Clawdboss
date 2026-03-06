@@ -210,6 +210,34 @@ collect_agent_info() {
   read -r TIER_CHOICE
   TIER_CHOICE="${TIER_CHOICE:-1}"
 
+  # Interface choice
+  echo ""
+  echo -e "${BOLD}--- Interface ---${NC}"
+  echo ""
+  echo "  1) Discord           — Chat with your agents via Discord bot"
+  echo "  2) NanoFlow Console  — Web dashboard with chat, file browser, terminal, cost analytics"
+  echo "  3) Both              — Discord + NanoFlow Console side by side"
+  echo ""
+  ask "Choose interface [1/2/3]"
+  read -r INTERFACE_CHOICE
+  INTERFACE_CHOICE="${INTERFACE_CHOICE:-1}"
+
+  USE_DISCORD=false
+  USE_CONSOLE=false
+
+  case "$INTERFACE_CHOICE" in
+    2)
+      USE_CONSOLE=true
+      ;;
+    3)
+      USE_DISCORD=true
+      USE_CONSOLE=true
+      ;;
+    *)
+      USE_DISCORD=true
+      ;;
+  esac
+
   DEPLOY_COMMS=false
   DEPLOY_RESEARCH=false
   DEPLOY_SECURITY=false
@@ -307,53 +335,60 @@ collect_keys() {
 
   echo ""
 
-  # Discord
-  echo -e "${BOLD}Discord:${NC}"
-  ask "Discord bot token"
-  read -rs DISCORD_TOKEN
-  echo ""
+  # Discord (only if using Discord interface)
+  if [ "$USE_DISCORD" = true ]; then
+    echo -e "${BOLD}Discord:${NC}"
+    ask "Discord bot token"
+    read -rs DISCORD_TOKEN
+    echo ""
 
-  while true; do
-    ask "Discord guild (server) ID"
-    read -r DISCORD_GUILD
-    if validate_snowflake "$DISCORD_GUILD" "guild ID" >/dev/null 2>&1; then break; fi
-  done
-
-  while true; do
-    ask "Your Discord user ID"
-    read -r DISCORD_OWNER
-    if validate_snowflake "$DISCORD_OWNER" "user ID" >/dev/null 2>&1; then break; fi
-  done
-
-  # Channel IDs
-  while true; do
-    ask "Main agent channel ID"
-    read -r DISCORD_MAIN_CHANNEL
-    if validate_snowflake "$DISCORD_MAIN_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
-  done
-
-  if [ "$DEPLOY_COMMS" = true ]; then
     while true; do
-      ask "Comms agent channel ID"
-      read -r DISCORD_COMMS_CHANNEL
-      if validate_snowflake "$DISCORD_COMMS_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      ask "Discord guild (server) ID"
+      read -r DISCORD_GUILD
+      if validate_snowflake "$DISCORD_GUILD" "guild ID" >/dev/null 2>&1; then break; fi
     done
-  fi
 
-  if [ "$DEPLOY_RESEARCH" = true ]; then
     while true; do
-      ask "Research agent channel ID"
-      read -r DISCORD_RESEARCH_CHANNEL
-      if validate_snowflake "$DISCORD_RESEARCH_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      ask "Your Discord user ID"
+      read -r DISCORD_OWNER
+      if validate_snowflake "$DISCORD_OWNER" "user ID" >/dev/null 2>&1; then break; fi
     done
-  fi
 
-  if [ "$DEPLOY_SECURITY" = true ]; then
+    # Channel IDs
     while true; do
-      ask "Security agent channel ID"
-      read -r DISCORD_SECURITY_CHANNEL
-      if validate_snowflake "$DISCORD_SECURITY_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      ask "Main agent channel ID"
+      read -r DISCORD_MAIN_CHANNEL
+      if validate_snowflake "$DISCORD_MAIN_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
     done
+
+    if [ "$DEPLOY_COMMS" = true ]; then
+      while true; do
+        ask "Comms agent channel ID"
+        read -r DISCORD_COMMS_CHANNEL
+        if validate_snowflake "$DISCORD_COMMS_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      done
+    fi
+
+    if [ "$DEPLOY_RESEARCH" = true ]; then
+      while true; do
+        ask "Research agent channel ID"
+        read -r DISCORD_RESEARCH_CHANNEL
+        if validate_snowflake "$DISCORD_RESEARCH_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      done
+    fi
+
+    if [ "$DEPLOY_SECURITY" = true ]; then
+      while true; do
+        ask "Security agent channel ID"
+        read -r DISCORD_SECURITY_CHANNEL
+        if validate_snowflake "$DISCORD_SECURITY_CHANNEL" "channel ID" >/dev/null 2>&1; then break; fi
+      done
+    fi
+  else
+    DISCORD_TOKEN=""
+    DISCORD_GUILD=""
+    DISCORD_OWNER=""
+    DISCORD_MAIN_CHANNEL=""
   fi
 
   echo ""
@@ -417,10 +452,15 @@ ENVEOF
     echo "ANTHROPIC_API_KEY=${ANTHROPIC_KEY}" >> "$ENV_FILE"
   fi
 
-  cat >> "$ENV_FILE" << ENVEOF
+  if [ "$USE_DISCORD" = true ]; then
+    cat >> "$ENV_FILE" << ENVEOF
 
 # Discord
 DISCORD_BOT_TOKEN=${DISCORD_TOKEN}
+ENVEOF
+  fi
+
+  cat >> "$ENV_FILE" << ENVEOF
 
 # Web Search
 BRAVE_API_KEY=${BRAVE_KEY:-}
@@ -457,15 +497,17 @@ generate_config() {
   export CB_TEMPLATES_DIR="$TEMPLATES_DIR"
   export CB_WORKSPACE_DIR="$WORKSPACE_DIR"
   export CB_OPENCLAW_DIR="$OPENCLAW_DIR"
-  export CB_DISCORD_GUILD="$DISCORD_GUILD"
-  export CB_DISCORD_OWNER="$DISCORD_OWNER"
-  export CB_DISCORD_MAIN_CHANNEL="$DISCORD_MAIN_CHANNEL"
+  export CB_DISCORD_GUILD="${DISCORD_GUILD:-}"
+  export CB_DISCORD_OWNER="${DISCORD_OWNER:-}"
+  export CB_DISCORD_MAIN_CHANNEL="${DISCORD_MAIN_CHANNEL:-}"
   export CB_DEPLOY_COMMS="$DEPLOY_COMMS"
   export CB_DEPLOY_RESEARCH="$DEPLOY_RESEARCH"
   export CB_DEPLOY_SECURITY="$DEPLOY_SECURITY"
   export CB_LLM_PROVIDER="$LLM_PROVIDER"
   export CB_OPENAI_SKILLS_KEY="${OPENAI_SKILLS_KEY:-}"
   export CB_ELEVENLABS_KEY="${ELEVENLABS_KEY:-}"
+  export CB_USE_DISCORD="$USE_DISCORD"
+  export CB_USE_CONSOLE="$USE_CONSOLE"
 
   # Only export specialist names/channels if deploying
   if [ "$DEPLOY_COMMS" = true ]; then
@@ -488,12 +530,14 @@ import json, os
 templates_dir = os.environ['CB_TEMPLATES_DIR']
 workspace_dir = os.environ['CB_WORKSPACE_DIR']
 openclaw_dir = os.environ['CB_OPENCLAW_DIR']
-guild_id = os.environ['CB_DISCORD_GUILD']
-owner_id = os.environ['CB_DISCORD_OWNER']
-main_channel = os.environ['CB_DISCORD_MAIN_CHANNEL']
+guild_id = os.environ.get('CB_DISCORD_GUILD', '')
+owner_id = os.environ.get('CB_DISCORD_OWNER', '')
+main_channel = os.environ.get('CB_DISCORD_MAIN_CHANNEL', '')
 deploy_comms = os.environ['CB_DEPLOY_COMMS'] == 'true'
 deploy_research = os.environ['CB_DEPLOY_RESEARCH'] == 'true'
 deploy_security = os.environ['CB_DEPLOY_SECURITY'] == 'true'
+use_discord = os.environ.get('CB_USE_DISCORD', 'true') == 'true'
+use_console = os.environ.get('CB_USE_CONSOLE', 'false') == 'true'
 llm_provider = os.environ['CB_LLM_PROVIDER']
 openai_skills_key = os.environ.get('CB_OPENAI_SKILLS_KEY', '')
 elevenlabs_key = os.environ.get('CB_ELEVENLABS_KEY', '')
@@ -504,25 +548,31 @@ with open(os.path.join(templates_dir, "openclaw.template.json")) as f:
 # Fix workspace
 config['agents']['list'][0]['workspace'] = workspace_dir
 
-# Fix guild/owner
-config['channels']['discord']['allowFrom'] = [owner_id]
-config['channels']['discord']['execApprovals']['approvers'] = [owner_id]
+# Discord config (only if using Discord)
+if use_discord and guild_id and owner_id:
+    config['channels']['discord']['allowFrom'] = [owner_id]
+    config['channels']['discord']['execApprovals']['approvers'] = [owner_id]
 
-config['channels']['discord']['guilds'] = {
-    guild_id: {
-        "requireMention": False,
-        "users": [owner_id],
-        "channels": {
-            main_channel: {"allow": True}
+    config['channels']['discord']['guilds'] = {
+        guild_id: {
+            "requireMention": False,
+            "users": [owner_id],
+            "channels": {
+                main_channel: {"allow": True}
+            }
         }
     }
-}
 
-# Fix bindings
-config['bindings'] = [{
-    "agentId": "main",
-    "match": {"channel": "discord", "guildId": guild_id}
-}]
+    # Fix bindings
+    config['bindings'] = [{
+        "agentId": "main",
+        "match": {"channel": "discord", "guildId": guild_id}
+    }]
+else:
+    # No Discord — remove discord channel config, use dashboard only
+    if 'discord' in config.get('channels', {}):
+        del config['channels']['discord']
+    config['bindings'] = []
 
 # Agent allow list
 allow_agents = ["main"]
@@ -549,7 +599,8 @@ if deploy_comms:
         "match": {"channel": "discord", "peer": {"kind": "channel", "id": comms_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels'][comms_channel] = {"allow": True}
+    if use_discord and guild_id:
+        config['channels']['discord']['guilds'][guild_id]['channels'][comms_channel] = {"allow": True}
 
 if deploy_research:
     research_name = os.environ.get('CB_RESEARCH_NAME', 'Trace')
@@ -572,7 +623,8 @@ if deploy_research:
         "match": {"channel": "discord", "peer": {"kind": "channel", "id": research_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels'][research_channel] = {"allow": True}
+    if use_discord and guild_id:
+        config['channels']['discord']['guilds'][guild_id]['channels'][research_channel] = {"allow": True}
 
 if deploy_security:
     security_name = os.environ.get('CB_SECURITY_NAME', 'Sentinel')
@@ -595,7 +647,8 @@ if deploy_security:
         "match": {"channel": "discord", "peer": {"kind": "channel", "id": security_channel}}
     })
 
-    config['channels']['discord']['guilds'][guild_id]['channels'][security_channel] = {"allow": True}
+    if use_discord and guild_id:
+        config['channels']['discord']['guilds'][guild_id]['channels'][security_channel] = {"allow": True}
 
 # Set allow lists
 config['agents']['list'][0]['subagents']['allowAgents'] = allow_agents
@@ -903,7 +956,24 @@ show_summary() {
   fi
 
   echo "    2. Check status:         openclaw status"
-  echo "    3. Open dashboard:       openclaw dashboard"
+
+  if [ "$USE_CONSOLE" = true ]; then
+    echo "    3. Start NanoFlow Console:"
+    echo "       cd ~/nanoflow-console && HOST=0.0.0.0 PORT=3000 node server-entry.js"
+    echo "       Then open http://localhost:3000"
+  fi
+
+  if [ "$USE_DISCORD" = true ]; then
+    echo "    3. Open Discord and chat with your agent"
+  fi
+  echo ""
+  echo -e "  ${BOLD}Interface:${NC}"
+  if [ "$USE_DISCORD" = true ]; then
+    echo "    • Discord bot configured"
+  fi
+  if [ "$USE_CONSOLE" = true ]; then
+    echo "    • NanoFlow Console installed at ~/nanoflow-console"
+  fi
   echo ""
   echo -e "  ${BOLD}Ecosystem Tools:${NC}"
   if [[ "${INSTALL_CLAWMETRY:-N}" =~ ^[Yy] ]]; then
@@ -952,6 +1022,51 @@ main() {
   generate_config
   deploy_workspaces
   install_octave
+
+  # Install NanoFlow Console (if selected)
+  if [ "$USE_CONSOLE" = true ]; then
+    echo ""
+    echo -e "${BOLD}--- NanoFlow Console ---${NC}"
+    echo ""
+    info "Installing NanoFlow Console web dashboard..."
+
+    CONSOLE_DIR="$HOME/nanoflow-console"
+    if [ -d "$CONSOLE_DIR" ]; then
+      info "Existing installation found at $CONSOLE_DIR — pulling latest..."
+      (cd "$CONSOLE_DIR" && git pull --ff-only 2>/dev/null) || warn "Could not update — using existing version"
+    else
+      if git clone --depth 1 https://github.com/NanoFlow-io/nanoflow-console.git "$CONSOLE_DIR" 2>/dev/null; then
+        success "NanoFlow Console cloned to $CONSOLE_DIR"
+      else
+        warn "Could not clone NanoFlow Console. Install manually:"
+        warn "  git clone https://github.com/NanoFlow-io/nanoflow-console.git"
+        USE_CONSOLE=false
+      fi
+    fi
+
+    if [ "$USE_CONSOLE" = true ] && [ -d "$CONSOLE_DIR" ]; then
+      (cd "$CONSOLE_DIR" && npm install --silent 2>&1 | tail -3) \
+        && success "Dependencies installed" \
+        || warn "npm install failed — run manually in $CONSOLE_DIR"
+
+      # Create .env for NanoFlow Console
+      CONSOLE_ENV="$CONSOLE_DIR/.env"
+      cat > "$CONSOLE_ENV" << CONSOLEEOF
+CLAWDBOT_GATEWAY_URL=ws://127.0.0.1:18789
+CLAWDBOT_GATEWAY_TOKEN=${GATEWAY_TOKEN}
+CONSOLEEOF
+      chmod 600 "$CONSOLE_ENV"
+
+      # Build for production
+      info "Building NanoFlow Console..."
+      (cd "$CONSOLE_DIR" && npm run build 2>&1 | tail -3) \
+        && success "NanoFlow Console built successfully" \
+        || warn "Build failed — run 'npm run build' manually in $CONSOLE_DIR"
+
+      success "NanoFlow Console ready at $CONSOLE_DIR"
+      info "Start with: cd $CONSOLE_DIR && HOST=0.0.0.0 PORT=3000 node server-entry.js"
+    fi
+  fi
   echo ""
 
   # Offer Clawmetry install

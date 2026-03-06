@@ -73,6 +73,18 @@ clawdboss/
     └── octave.md               # OCTAVE protocol guide
 ```
 
+## Interface Options
+
+During setup, choose your preferred interface:
+
+| Option | Best For |
+|--------|----------|
+| **Discord** | Power users who live in Discord. Channel-per-agent, reactions, threads. |
+| **NanoFlow Console** | Visual dashboard with chat, file browser, terminal, cost analytics. Great for non-technical users. |
+| **Both** | Use Discord for quick commands + Console for monitoring and file management. |
+
+NanoFlow Console is a branded web dashboard built on [ClawSuite](https://github.com/outsourc-e/clawsuite) (MIT license).
+
 ## Context Persistence (WAL Protocol)
 
 Clawdboss agents don't lose your corrections and decisions when context resets:
