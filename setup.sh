@@ -1363,7 +1363,7 @@ install_github_skill() {
   fi
 
   # Install the OpenClaw GitHub skill
-  npx clawhub@latest install github 2>/dev/null \
+  npx --yes clawhub@latest install github 2>/dev/null \
     && success "GitHub skill installed" \
     || { info "clawhub install failed — copying from bundled skills"; }
 
@@ -1390,7 +1390,7 @@ install_humanizer() {
     return
   fi
 
-  if npx clawhub@latest install humanizer 2>/dev/null; then
+  if npx --yes clawhub@latest install humanizer 2>/dev/null; then
     success "Humanizer skill installed"
   else
     # Fallback to git clone
@@ -1399,7 +1399,7 @@ install_humanizer() {
     if git clone --depth 1 https://github.com/brandonwise/humanizer.git "$SKILLS_DIR/humanizer" 2>/dev/null; then
       success "Humanizer installed from GitHub"
     else
-      warn "Could not install Humanizer. Install manually: npx clawhub@latest install humanizer"
+      warn "Could not install Humanizer. Install manually: npx --yes clawhub@latest install humanizer"
     fi
   fi
 }
@@ -1424,10 +1424,10 @@ install_self_improving() {
     return
   fi
 
-  if npx clawhub@latest install self-improving-agent 2>/dev/null; then
+  if npx --yes clawhub@latest install self-improving 2>/dev/null; then
     success "Self-Improving Agent skill installed"
   else
-    warn "Could not install. Install manually: npx clawhub@latest install self-improving-agent"
+    warn "Could not install. Install manually: npx --yes clawhub@latest install self-improving"
   fi
 }
 
@@ -1451,10 +1451,10 @@ install_find_skills() {
     return
   fi
 
-  if npx clawhub@latest install find-skills 2>/dev/null; then
+  if npx --yes clawhub@latest install find-skills 2>/dev/null; then
     success "Find Skills installed"
   else
-    warn "Could not install. Install manually: npx clawhub@latest install find-skills"
+    warn "Could not install. Install manually: npx --yes clawhub@latest install find-skills"
   fi
 }
 
@@ -1478,10 +1478,10 @@ install_marketing_skills() {
     return
   fi
 
-  if npx clawhub@latest install marketing-skills 2>/dev/null; then
+  if npx --yes clawhub@latest install marketing-skills 2>/dev/null; then
     success "Marketing Skills installed"
   else
-    warn "Could not install. Install manually: npx clawhub@latest install marketing-skills"
+    warn "Could not install. Install manually: npx --yes clawhub@latest install marketing-skills"
   fi
 }
 
@@ -1535,10 +1535,10 @@ install_playwright() {
     return
   fi
 
-  if npx clawhub@latest install playwright-mcp 2>/dev/null; then
+  if npx --yes clawhub@latest install playwright-mcp 2>/dev/null; then
     success "Playwright MCP skill installed"
   else
-    warn "clawhub install failed. Install manually: npx clawhub@latest install playwright-mcp"
+    warn "clawhub install failed. Install manually: npx --yes clawhub@latest install playwright-mcp"
   fi
 }
 
