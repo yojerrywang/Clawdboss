@@ -1989,9 +1989,26 @@ CONSOLEEOF
             read -r CONSOLE_AUTH_USER
             CONSOLE_AUTH_USER="${CONSOLE_AUTH_USER:-admin}"
 
-            ask "Basic auth password"
-            read -rs CONSOLE_AUTH_PASS
-            echo ""
+            while true; do
+              ask "Basic auth password"
+              read -rs CONSOLE_AUTH_PASS
+              echo ""
+
+              if [ -z "$CONSOLE_AUTH_PASS" ]; then
+                warn "Password cannot be empty. Try again."
+                continue
+              fi
+
+              ask "Confirm password"
+              read -rs CONSOLE_AUTH_PASS_CONFIRM
+              echo ""
+
+              if [ "$CONSOLE_AUTH_PASS" != "$CONSOLE_AUTH_PASS_CONFIRM" ]; then
+                warn "Passwords don't match. Try again."
+              else
+                break
+              fi
+            done
 
             # Hash the password for Caddy
             CONSOLE_AUTH_HASH=$(caddy hash-password --plaintext "$CONSOLE_AUTH_PASS" 2>/dev/null)
