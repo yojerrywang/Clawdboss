@@ -95,9 +95,72 @@ Without WAL, agents lose corrections, decisions, and details when context compac
 - API keys have `600` file permissions
 - Discord exec approvals enabled by default
 
+## Brute-Force Protection (fail2ban)
+
+The setup wizard offers to install and configure [fail2ban](https://github.com/fail2ban/fail2ban) — an intrusion prevention framework that monitors log files and automatically bans IPs showing malicious behavior.
+
+### What It Does
+
+- **Monitors** SSH, web server, and other service logs for repeated authentication failures
+- **Bans** offending IPs via firewall rules (iptables/nftables) for a configurable duration
+- **Protects** against brute-force password attacks, credential stuffing, and automated scanning
+
+### Default Configuration
+
+The setup wizard creates `/etc/fail2ban/jail.local` with sensible defaults:
+
+```ini
+[DEFAULT]
+bantime  = 1h        # Ban duration
+findtime = 10m       # Window for counting failures
+maxretry = 5         # Failures before ban
+
+[sshd]
+enabled = true       # Protect SSH by default
+```
+
+### Manual Installation
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install fail2ban
+
+# Fedora/RHEL
+sudo dnf install fail2ban
+
+# Arch
+sudo pacman -S fail2ban
+
+# Enable and start
+sudo systemctl enable --now fail2ban
+
+# Check status
+sudo fail2ban-client status
+sudo fail2ban-client status sshd
+```
+
+### Adding More Jails
+
+Protect additional services by adding jails to `/etc/fail2ban/jail.local`:
+
+```ini
+# Nginx authentication failures
+[nginx-http-auth]
+enabled = true
+
+# Repeated 404s (scanners)
+[nginx-botsearch]
+enabled = true
+```
+
+### Why It Matters for OpenClaw Deployments
+
+If you're running OpenClaw on a VPS (e.g., Contabo, Hetzner, DigitalOcean), your SSH port is internet-facing. Without fail2ban, attackers can attempt thousands of password combinations per hour. fail2ban stops this by banning IPs after a few failures — it's one of the most effective low-effort security measures for any Linux server.
+
 ## Recommendations
 
 1. **Rotate API keys** on a schedule (quarterly minimum)
 2. **Enable UFW** if running on a VPS: `sudo ufw allow ssh && sudo ufw enable`
-3. **Use Tailscale** for remote access instead of exposing ports
-4. **Review the Ansible playbook** for VPS deployments: [openclaw-ansible](https://github.com/openclaw/openclaw-ansible)
+3. **Install fail2ban** for brute-force protection (prompted during setup)
+4. **Use Tailscale** for remote access instead of exposing ports
+5. **Review the Ansible playbook** for VPS deployments: [openclaw-ansible](https://github.com/openclaw/openclaw-ansible)

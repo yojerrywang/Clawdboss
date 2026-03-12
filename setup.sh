@@ -1989,6 +1989,9 @@ show_summary() {
     echo "    • Soul Guardian — file integrity monitoring"
     echo "    • ClawSec advisory feed — vulnerability alerts"
   fi
+  if [[ "${INSTALL_FAIL2BAN:-N}" =~ ^[Yy] ]]; then
+    echo "    • fail2ban — brute-force protection (SSH jail active)"
+  fi
   # Show hardening results if run
   if command -v ufw &>/dev/null; then
     local UFW_NOW
@@ -2485,6 +2488,81 @@ CADDYEOF
     else
       warn "Could not clone ClawSec. Install manually: git clone https://github.com/prompt-security/clawsec.git"
     fi
+  fi
+
+  # ---- fail2ban — Brute-Force Protection ----
+  echo ""
+  echo -e "${BOLD}--- fail2ban — Brute-Force Protection (Optional) ---${NC}"
+  echo ""
+  info "fail2ban monitors log files (SSH, web servers, etc.) and automatically"
+  info "bans IPs that show malicious signs — too many password failures,"
+  info "exploit-seeking requests, etc. Essential for any internet-facing server."
+  echo ""
+  ask "Install and configure fail2ban? [Y/n]"
+  read -r INSTALL_FAIL2BAN
+  INSTALL_FAIL2BAN="${INSTALL_FAIL2BAN:-Y}"
+
+  if [[ "$INSTALL_FAIL2BAN" =~ ^[Yy] ]]; then
+    if command -v fail2ban-client &>/dev/null; then
+      success "fail2ban is already installed"
+      if systemctl is-active --quiet fail2ban 2>/dev/null; then
+        success "fail2ban service is running"
+      else
+        info "Starting fail2ban service..."
+        sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
+          && success "fail2ban enabled and started" \
+          || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
+      fi
+    else
+      info "Installing fail2ban..."
+      if command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq fail2ban \
+          && success "fail2ban installed" \
+          || warn "Failed to install fail2ban. Run: sudo apt-get install fail2ban"
+      elif command -v dnf &>/dev/null; then
+        sudo dnf install -y -q fail2ban \
+          && success "fail2ban installed" \
+          || warn "Failed to install fail2ban. Run: sudo dnf install fail2ban"
+      elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm fail2ban \
+          && success "fail2ban installed" \
+          || warn "Failed to install fail2ban. Run: sudo pacman -S fail2ban"
+      else
+        warn "Package manager not detected. Install fail2ban manually for your distro."
+      fi
+
+      # Enable and start if installed
+      if command -v fail2ban-client &>/dev/null; then
+        sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
+          && success "fail2ban enabled and started" \
+          || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
+      fi
+    fi
+
+    # Create a basic SSH jail config if none exists
+    local JAIL_LOCAL="/etc/fail2ban/jail.local"
+    if [ ! -f "$JAIL_LOCAL" ] && command -v fail2ban-client &>/dev/null; then
+      info "Creating basic SSH jail configuration..."
+      sudo tee "$JAIL_LOCAL" > /dev/null 2>&1 <<'JAIL_EOF'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+JAIL_EOF
+      if [ $? -eq 0 ]; then
+        sudo systemctl restart fail2ban 2>/dev/null
+        success "SSH jail configured (ban 1h after 5 failures in 10m)"
+      else
+        warn "Could not create jail.local. Configure manually: /etc/fail2ban/jail.local"
+      fi
+    elif [ -f "$JAIL_LOCAL" ]; then
+      info "jail.local already exists — keeping existing configuration"
+    fi
+  else
+    info "Skipping fail2ban."
   fi
 
   # ---- Memory Hybrid Plugin ----

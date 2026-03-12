@@ -215,6 +215,48 @@ npx clawhub@latest install marketing-skills
 
 ---
 
+### fail2ban — Brute-Force Protection
+
+**What:** Intrusion prevention framework that monitors log files (SSH, web servers, etc.) and automatically bans IPs showing malicious signs — too many password failures, exploit-seeking requests, etc. Essential for any internet-facing server.
+
+**Install:** Prompted during setup, or manually:
+```bash
+# Debian/Ubuntu
+sudo apt-get install fail2ban
+
+# Fedora/RHEL
+sudo dnf install fail2ban
+
+# Arch
+sudo pacman -S fail2ban
+
+# Enable and start
+sudo systemctl enable --now fail2ban
+```
+
+**Default jail config** (created by setup wizard at `/etc/fail2ban/jail.local`):
+```ini
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+```
+
+**Useful commands:**
+```bash
+sudo fail2ban-client status          # List active jails
+sudo fail2ban-client status sshd     # SSH jail details
+sudo fail2ban-client set sshd unbanip <IP>  # Unban an IP
+```
+
+**Links:**
+- GitHub: <https://github.com/fail2ban/fail2ban>
+
+---
+
 ## Observability & Security
 
 ### Clawmetry — Observability Dashboard

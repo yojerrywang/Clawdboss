@@ -165,6 +165,7 @@ The setup wizard offers each of these individually. All are free and open-source
 | **Find Skills** | Discover and install new skills on-the-fly from ClawHub | `clawhub install` |
 | **Marketing Skills** | 15+ marketing reference skills (copywriting, CRO, SEO, email, ads) | `clawhub install` |
 | **Healthcheck** | Host security audits: firewall, SSH, updates, exposure | Built-in |
+| **[fail2ban](https://github.com/fail2ban/fail2ban)** | Brute-force protection — auto-bans malicious IPs | `apt install fail2ban` |
 
 See [docs/recommended-tools.md](docs/recommended-tools.md) for detailed install guides.
 
