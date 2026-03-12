@@ -10,14 +10,20 @@
           {
             "id": "claude-opus-4.6",
             "name": "Claude Opus 4.6 (Copilot)",
-            "input": ["text", "image"],
+            "input": [
+              "text",
+              "image"
+            ],
             "contextWindow": 200000,
             "maxTokens": 32768
           },
           {
             "id": "claude-sonnet-4.5",
             "name": "Claude Sonnet 4.5 (Copilot)",
-            "input": ["text", "image"],
+            "input": [
+              "text",
+              "image"
+            ],
             "contextWindow": 200000,
             "maxTokens": 16384
           }
@@ -47,7 +53,9 @@
         "default": true,
         "workspace": "__WORKSPACE_DIR__",
         "subagents": {
-          "allowAgents": ["main"]
+          "allowAgents": [
+            "main"
+          ]
         }
       }
     ]
@@ -70,13 +78,13 @@
   ],
   "messages": {
     "queue": {
-      "mode": "interrupt",
+      "mode": "steer",
       "byChannel": {
-        "discord": "interrupt"
+        "discord": "steer"
       },
-      "debounceMs": 8000,
-      "cap": 1,
-      "drop": "old"
+      "debounceMs": 3000,
+      "cap": 10,
+      "drop": "summarize"
     },
     "inbound": {
       "debounceMs": 3000,
@@ -94,8 +102,12 @@
     "internal": {
       "enabled": true,
       "entries": {
-        "boot-md": { "enabled": true },
-        "bootstrap-extra-files": { "enabled": true }
+        "boot-md": {
+          "enabled": true
+        },
+        "bootstrap-extra-files": {
+          "enabled": true
+        }
       }
     }
   },
@@ -107,17 +119,23 @@
       "maxLinesPerMessage": 999,
       "replyToMode": "first",
       "dmPolicy": "allowlist",
-      "allowFrom": ["__DISCORD_OWNER_ID__"],
+      "allowFrom": [
+        "__DISCORD_OWNER_ID__"
+      ],
       "guilds": {
         "__DISCORD_GUILD_ID__": {
           "requireMention": false,
-          "users": ["__DISCORD_OWNER_ID__"],
+          "users": [
+            "__DISCORD_OWNER_ID__"
+          ],
           "channels": {}
         }
       },
       "execApprovals": {
         "enabled": true,
-        "approvers": ["__DISCORD_OWNER_ID__"],
+        "approvers": [
+          "__DISCORD_OWNER_ID__"
+        ],
         "target": "channel"
       }
     }
