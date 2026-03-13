@@ -9,6 +9,26 @@ set -euo pipefail
 # Security: restrict file creation to owner-only by default
 umask 077
 
+OS_TYPE="$(uname -s)"
+IS_MAC=false
+[ "$OS_TYPE" = "Darwin" ] && IS_MAC=true
+
+install_pkg() {
+  if [ "$IS_MAC" = true ]; then
+    # Strip apt-specific flags that brew doesn't understand
+    local brew_args=()
+    for arg in "$@"; do
+      case "$arg" in
+        -y|-qq|-y' '-qq) ;;  # skip apt flags
+        *) brew_args+=("$arg") ;;
+      esac
+    done
+    brew install "${brew_args[@]}" 2>/dev/null
+  else
+    apt-get install -y -qq "$@" 2>/dev/null
+  fi
+}
+ 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$SCRIPT_DIR/templates"
 OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}"
@@ -33,13 +53,9 @@ banner() {
   echo -e "${CYAN}  ╚██████╗███████╗██║  ██║╚███╔███╔╝██████╔╝██████╔╝╚██████╔╝███████║███████║${NC}"
   echo -e "${CYAN}   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝╚══════╝${NC}"
   echo ""
-  echo -e "  Deploy a fully configured AI agent team to any VPS in under 15 minutes."
-  echo -e "  ${BOLD}Multi-agent • Discord/ClawSuite • Memory • Security • On-boarding${NC}"
+  echo -e "  Deploy a hardened, multi-agent OpenClaw setup to any machine in minutes."
+  echo -e "  ${BOLD}Multi-agent • Discord/Telegram/Console • Memory • Security • Skills${NC}"
   echo ""
-  echo -e "  Plus a curated \"best of OpenClaw\" series of skills, plugins, APIs and"
-  echo -e "  security hardening to have your OpenClaw instance firing out of the box."
-  echo ""
-  echo -e "  Brought to you by the team at ${BOLD}NanoFlow.io${NC} • Enjoy your OpenClaw!"
   echo -e "  ${BLUE}github.com/NanoFlow-io/clawdboss${NC}"
   echo ""
 }
@@ -152,7 +168,16 @@ preflight() {
 
   if [ "$need_node" = true ]; then
     info "Installing Node.js 22..."
-    if command -v curl &>/dev/null; then
+    if [ "$IS_MAC" = true ]; then
+      brew install node@22 2>/dev/null \
+        && brew link node@22 --force --overwrite 2>/dev/null \
+        && success "Node.js $(node -v) installed" \
+        || {
+          error "Could not auto-install Node.js. Install manually:"
+          echo "  brew install node@22"
+          exit 1
+        }
+    elif command -v curl &>/dev/null; then
       curl -fsSL https://deb.nodesource.com/setup_22.x | bash - 2>/dev/null \
         && apt-get install -y nodejs 2>/dev/null \
         && success "Node.js $(node -v) installed" \
@@ -164,9 +189,8 @@ preflight() {
         }
     else
       error "curl not found. Install Node.js 22 manually:"
-      echo "  apt-get install -y curl"
-      echo "  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
-      echo "  sudo apt-get install -y nodejs"
+      echo "  brew install node@22  # macOS"
+      echo "  apt-get install -y curl && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
       exit 1
     fi
   else
@@ -175,18 +199,24 @@ preflight() {
 
   # Auto-install essential build tools
   local missing_pkgs=""
-  command -v git &>/dev/null || missing_pkgs="$missing_pkgs git"
-  command -v python3 &>/dev/null || missing_pkgs="$missing_pkgs python3"
-  command -v make &>/dev/null || missing_pkgs="$missing_pkgs build-essential"
-  command -v pip3 &>/dev/null || missing_pkgs="$missing_pkgs python3-pip"
-  python3 -c "import ensurepip" &>/dev/null 2>&1 || missing_pkgs="$missing_pkgs python3-venv"
-
-  if [ -n "$missing_pkgs" ]; then
-    info "Installing dependencies:$missing_pkgs"
-    apt-get update -qq 2>/dev/null
-    apt-get install -y $missing_pkgs 2>/dev/null \
-      && success "Dependencies installed" \
-      || warn "Could not auto-install some packages. Install manually: sudo apt-get install -y$missing_pkgs"
+  if [ "$IS_MAC" = true ]; then
+    command -v git &>/dev/null || brew install git 2>/dev/null
+    command -v python3 &>/dev/null || brew install python3 2>/dev/null
+    command -v make &>/dev/null || xcode-select --install 2>/dev/null || true
+    command -v pip3 &>/dev/null || python3 -m ensurepip 2>/dev/null || true
+  else
+    command -v git &>/dev/null || missing_pkgs="$missing_pkgs git"
+    command -v python3 &>/dev/null || missing_pkgs="$missing_pkgs python3"
+    command -v make &>/dev/null || missing_pkgs="$missing_pkgs build-essential"
+    command -v pip3 &>/dev/null || missing_pkgs="$missing_pkgs python3-pip"
+    python3 -c "import ensurepip" &>/dev/null 2>&1 || missing_pkgs="$missing_pkgs python3-venv"
+    if [ -n "$missing_pkgs" ]; then
+      info "Installing dependencies:$missing_pkgs"
+      apt-get update -qq 2>/dev/null
+      apt-get install -y $missing_pkgs 2>/dev/null \
+        && success "Dependencies installed" \
+        || warn "Could not auto-install some packages. Install manually: sudo apt-get install -y$missing_pkgs"
+    fi
   fi
 
   if ! command -v openclaw &>/dev/null; then
@@ -207,6 +237,7 @@ preflight() {
   echo ""
 }
 
+
 # ============================================================
 # Collect user info
 # ============================================================
@@ -218,23 +249,23 @@ collect_user_info() {
   echo ""
 
   while true; do
-    ask "Your name"
+    ask "Your name (default: Dr Claw)"
     read -r USER_NAME
-    USER_NAME="${USER_NAME:-User}"
+    USER_NAME="${USER_NAME:-Dr Claw}"
     if validate_name "$USER_NAME" "name" >/dev/null 2>&1; then break; fi
   done
 
-  ask "Your timezone (e.g., America/Los_Angeles, Europe/London)"
+  ask "Your timezone (default: America/Los_Angeles)"
   read -r USER_TIMEZONE
-  USER_TIMEZONE=$(validate_timezone "${USER_TIMEZONE:-UTC}")
+  USER_TIMEZONE=$(validate_timezone "${USER_TIMEZONE:-America/Los_Angeles}")
 
-  ask "Your location (city/region, e.g., 'Irvine, California' or 'London, UK')"
+  ask "Your location (default: Cupertino, CA)"
   read -r USER_LOCATION
-  USER_LOCATION="${USER_LOCATION:-}"
+  USER_LOCATION="${USER_LOCATION:-Cupertino, CA}"
 
-  ask "Your pronouns (e.g., he/him, she/her, they/them)"
+  ask "Your pronouns (default: he/him)"
   read -r USER_PRONOUNS
-  USER_PRONOUNS="${USER_PRONOUNS:-they/them}"
+  USER_PRONOUNS="${USER_PRONOUNS:-he/him}"
 
   echo ""
   echo -e "${BOLD}What do you do? (pick the closest)${NC}"
@@ -247,9 +278,9 @@ collect_user_info() {
   echo "  6) Student / researcher"
   echo "  7) Other"
   echo ""
-  ask "Your role [1-7]"
+  ask "Your role [1-7] (default: 1)"
   read -r USER_ROLE_CHOICE
-  USER_ROLE_CHOICE="${USER_ROLE_CHOICE:-7}"
+  USER_ROLE_CHOICE="${USER_ROLE_CHOICE:-1}"
 
   case "$USER_ROLE_CHOICE" in
     1) USER_ROLE="Software developer" ;;
@@ -262,9 +293,9 @@ collect_user_info() {
   esac
 
   echo ""
-  ask "Brief description of what you do (e.g., 'I run a real estate company' or 'Full-stack dev at a startup')"
+  ask "Brief description of what you do (default: startup founder)"
   read -r USER_DESCRIPTION
-  USER_DESCRIPTION="${USER_DESCRIPTION:-}"
+  USER_DESCRIPTION="${USER_DESCRIPTION:-startup founder}"
 
   echo ""
   echo -e "${BOLD}What will you primarily use your agent for?${NC}"
@@ -276,7 +307,7 @@ collect_user_info() {
   echo "  5) Personal assistant (daily tasks, reminders, organization)"
   echo "  6) All of the above / general purpose"
   echo ""
-  ask "Primary use case [1-6]"
+  ask "Primary use case [1-6] (default: 6)"
   read -r USER_USECASE_CHOICE
   USER_USECASE_CHOICE="${USER_USECASE_CHOICE:-6}"
 
@@ -308,15 +339,15 @@ collect_agent_info() {
   echo ""
 
   while true; do
-    ask "Agent name (letters, numbers, spaces, hyphens only)"
+    ask "Agent name (default: Dr Claw)"
     read -r AGENT_NAME
-    AGENT_NAME="${AGENT_NAME:-Assistant}"
+    AGENT_NAME="${AGENT_NAME:-Dr Claw}"
     if validate_name "$AGENT_NAME" "agent name" >/dev/null 2>&1; then break; fi
   done
 
-  ask "Agent pronouns (e.g., they/them, she/her, he/him)"
+  ask "Agent pronouns (default: he/him)"
   read -r AGENT_PRONOUNS
-  AGENT_PRONOUNS="${AGENT_PRONOUNS:-they/them}"
+  AGENT_PRONOUNS="${AGENT_PRONOUNS:-he/him}"
 
   echo ""
   echo -e "${BOLD}Pick an emoji for your agent:${NC}"
@@ -326,9 +357,9 @@ collect_agent_info() {
   echo "  3) 🦾  Mech arm     7) 🎤  Microphone  11) 🌟  Star"
   echo "  4) 🚀  Rocket       8) 💡  Lightbulb   12) 🐙  Octopus"
   echo ""
-  ask "Choose emoji [1-12, or type your own]"
+  ask "Choose emoji [1-12] (default: 3 - Mech arm)"
   read -r EMOJI_CHOICE
-  EMOJI_CHOICE="${EMOJI_CHOICE:-1}"
+  EMOJI_CHOICE="${EMOJI_CHOICE:-3}"
 
   case "$EMOJI_CHOICE" in
     1) AGENT_EMOJI="🤖" ;;
@@ -356,9 +387,9 @@ collect_agent_info() {
   echo "  5) Witty — Clever, dry humor, personality-forward"
   echo "  6) Custom — You'll describe it yourself"
   echo ""
-  ask "Agent personality [1-6]"
+  ask "Agent personality [1-6] (default: 6 - Custom)"
   read -r AGENT_VIBE_CHOICE
-  AGENT_VIBE_CHOICE="${AGENT_VIBE_CHOICE:-2}"
+  AGENT_VIBE_CHOICE="${AGENT_VIBE_CHOICE:-6}"
 
   case "$AGENT_VIBE_CHOICE" in
     1) AGENT_VIBE="Professional — direct, efficient, no-nonsense. Gets to the point. Values clarity over charm." ;;
@@ -367,20 +398,20 @@ collect_agent_info() {
     4) AGENT_VIBE="Technical — precise, detailed, data-driven. Loves specs, accuracy, and thoroughness. Shows its work." ;;
     5) AGENT_VIBE="Witty — clever, dry humor, personality-forward. Smart and fun without being annoying. Knows when to be serious." ;;
     6)
-      ask "Describe your agent's personality in a sentence or two"
+      ask "Describe your agent's personality (press Enter for Dr. Claw villain preset)"
       read -r AGENT_VIBE
-      AGENT_VIBE="${AGENT_VIBE:-Helpful and adaptable}"
+      AGENT_VIBE="${AGENT_VIBE:-Dr. Claw is the unseen villain — cold, calculating, and always three steps ahead. He does not explain himself; he just gets results.}"
       ;;
     *) AGENT_VIBE="Friendly — warm, conversational, approachable." ;;
   esac
 
   echo ""
-  ask "What's your agent's mission? (e.g., 'Help me build and ship software faster' or 'Manage my business operations') — or press Enter for default"
+  ask "Agent mission (default: World domination)"
   read -r AGENT_MISSION
-  AGENT_MISSION="${AGENT_MISSION:-Help ${USER_NAME} get things done efficiently and thoughtfully}"
+  AGENT_MISSION="${AGENT_MISSION:-World domination}"
 
   echo ""
-  ask "Any specific skills or knowledge your agent should emphasize? (e.g., 'Python expert', 'knows real estate', 'marketing guru') — or press Enter to skip"
+  ask "Agent expertise — or press Enter to skip"
   read -r AGENT_EXPERTISE
   AGENT_EXPERTISE="${AGENT_EXPERTISE:-}"
 
@@ -391,9 +422,9 @@ collect_agent_info() {
   echo "  2) Team     — Main + Comms + Research agents"
   echo "  3) Squad    — Main + Comms + Research + Security agents"
   echo ""
-  ask "Choose tier [1/2/3]"
+  ask "Choose tier [1/2/3] (default: 3 - Squad)"
   read -r TIER_CHOICE
-  TIER_CHOICE="${TIER_CHOICE:-1}"
+  TIER_CHOICE="${TIER_CHOICE:-3}"
 
   # Interface choice
   echo ""
@@ -407,9 +438,9 @@ collect_agent_info() {
   echo "  6) Telegram + Console"
   echo "  7) All three"
   echo ""
-  ask "Choose interface [1-7]"
+  ask "Choose interface [1-7] (default: 6 - Telegram + Console)"
   read -r INTERFACE_CHOICE
-  INTERFACE_CHOICE="${INTERFACE_CHOICE:-1}"
+  INTERFACE_CHOICE="${INTERFACE_CHOICE:-6}"
 
   USE_DISCORD=false
   USE_TELEGRAM=false
@@ -465,27 +496,27 @@ collect_agent_info() {
   # Collect specialist agent names if deploying
   if [ "$DEPLOY_COMMS" = true ]; then
     while true; do
-      ask "Comms agent name (default: Knox)"
+      ask "Comms agent name (default: Penny)"
       read -r COMMS_NAME
-      COMMS_NAME="${COMMS_NAME:-Knox}"
+      COMMS_NAME="${COMMS_NAME:-Penny}"
       if validate_name "$COMMS_NAME" "comms agent name" >/dev/null 2>&1; then break; fi
     done
   fi
 
   if [ "$DEPLOY_RESEARCH" = true ]; then
     while true; do
-      ask "Research agent name (default: Trace)"
+      ask "Research agent name (default: Brain)"
       read -r RESEARCH_NAME
-      RESEARCH_NAME="${RESEARCH_NAME:-Trace}"
+      RESEARCH_NAME="${RESEARCH_NAME:-Brain}"
       if validate_name "$RESEARCH_NAME" "research agent name" >/dev/null 2>&1; then break; fi
     done
   fi
 
   if [ "$DEPLOY_SECURITY" = true ]; then
     while true; do
-      ask "Security agent name (default: Sentinel)"
+      ask "Security agent name (default: Inspector Gadget)"
       read -r SECURITY_NAME
-      SECURITY_NAME="${SECURITY_NAME:-Sentinel}"
+      SECURITY_NAME="${SECURITY_NAME:-Inspector Gadget}"
       if validate_name "$SECURITY_NAME" "security agent name" >/dev/null 2>&1; then break; fi
     done
   fi
@@ -521,9 +552,9 @@ collect_keys() {
   echo ""
   echo "  0) Other / manual config"
   echo ""
-  ask "Choose provider [0-9]"
+  ask "Choose provider [0-9] (default: 2 - Anthropic)"
   read -r PROVIDER_CHOICE
-  PROVIDER_CHOICE="${PROVIDER_CHOICE:-6}"
+  PROVIDER_CHOICE="${PROVIDER_CHOICE:-2}"
 
   case "$PROVIDER_CHOICE" in
     1)
@@ -1291,7 +1322,8 @@ BUFEOF
     local agent_type="$2"  # comms, research, security
 
     # Use bash parameter expansion for lowercase (no external commands)
-    local agent_id="${agent_name,,}"
+    local agent_id
+    agent_id="$(echo "$agent_name" | tr '[:upper:]' '[:lower:]')"
     # Replace spaces with hyphens
     agent_id="${agent_id// /-}"
 
@@ -1492,7 +1524,7 @@ install_graphthulhu() {
     ARCH=$(uname -m)
     case "$ARCH" in
       x86_64) ARCH="amd64" ;;
-      aarch64) ARCH="arm64" ;;
+      aarch64|arm64) ARCH="arm64" ;;
     esac
     local OS
     OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -1624,7 +1656,10 @@ install_github_skill() {
   # Install gh CLI if not present
   if ! command -v gh &>/dev/null; then
     info "Installing GitHub CLI (gh)..."
-    if command -v apt-get &>/dev/null; then
+    if [ "$IS_MAC" = true ]; then
+      brew install gh 2>/dev/null \
+        || warn "Could not install gh CLI automatically. Install manually: https://cli.github.com"
+    elif command -v apt-get &>/dev/null; then
       (type -p wget >/dev/null || apt-get install wget -y -qq) \
         && mkdir -p -m 755 /etc/apt/keyrings \
         && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
@@ -2252,8 +2287,16 @@ CONSOLEEOF
             info "Installing Caddy web server..."
             local CADDY_INSTALLED=false
 
-            if command -v apt-get &>/dev/null; then
-              # Method 1: Official apt repo
+            if [ "$IS_MAC" = true ]; then
+              # Method 1 (macOS): Homebrew
+              if brew install caddy 2>/dev/null; then
+                success "Caddy installed via Homebrew"
+                CADDY_INSTALLED=true
+              else
+                warn "Caddy brew install failed. Trying static binary fallback..."
+              fi
+            elif command -v apt-get &>/dev/null; then
+              # Method 1 (Linux): Official apt repo
               apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gnupg 2>/dev/null
 
               # Remove stale/expired keyring before re-downloading
@@ -2278,14 +2321,16 @@ CONSOLEEOF
             # Method 2: Static binary from GitHub releases
             if [ "$CADDY_INSTALLED" = false ]; then
               local CADDY_ARCH="amd64"
-              [ "$(uname -m)" = "aarch64" ] && CADDY_ARCH="arm64"
+              local CADDY_MACHINE="$(uname -m)"
+              [ "$CADDY_MACHINE" = "aarch64" ] || [ "$CADDY_MACHINE" = "arm64" ] && CADDY_ARCH="arm64"
+              local CADDY_OS="linux"
+              [ "$IS_MAC" = true ] && CADDY_OS="mac"
               local CADDY_TAG
-              CADDY_TAG=$(curl -sS "https://api.github.com/repos/caddyserver/caddy/releases/latest" 2>/dev/null \
-                | grep -oP '"tag_name":\s*"\K[^"]+')
+              CADDY_TAG=$(curl -sS "https://api.github.com/repos/caddyserver/caddy/releases/latest" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | tr -d '"' | sed 's/tag_name://')
 
               if [ -n "$CADDY_TAG" ]; then
                 local CADDY_VER="${CADDY_TAG#v}"
-                local CADDY_URL="https://github.com/caddyserver/caddy/releases/download/${CADDY_TAG}/caddy_${CADDY_VER}_linux_${CADDY_ARCH}.tar.gz"
+                local CADDY_URL="https://github.com/caddyserver/caddy/releases/download/${CADDY_TAG}/caddy_${CADDY_VER}_${CADDY_OS}_${CADDY_ARCH}.tar.gz"
                 if curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL" 2>/dev/null; then
                   tar xzf /tmp/caddy.tar.gz -C /tmp caddy 2>/dev/null
                   if [ -f /tmp/caddy ]; then
@@ -2490,7 +2535,7 @@ CADDYEOF
     fi
   fi
 
-  # ---- fail2ban — Brute-Force Protection ----
+ # ---- fail2ban — Brute-Force Protection ----
   echo ""
   echo -e "${BOLD}--- fail2ban — Brute-Force Protection (Optional) ---${NC}"
   echo ""
@@ -2502,48 +2547,47 @@ CADDYEOF
   read -r INSTALL_FAIL2BAN
   INSTALL_FAIL2BAN="${INSTALL_FAIL2BAN:-Y}"
 
-  if [[ "$INSTALL_FAIL2BAN" =~ ^[Yy] ]]; then
-    if command -v fail2ban-client &>/dev/null; then
-      success "fail2ban is already installed"
-      if systemctl is-active --quiet fail2ban 2>/dev/null; then
-        success "fail2ban service is running"
-      else
-        info "Starting fail2ban service..."
-        sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
-          && success "fail2ban enabled and started" \
-          || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
-      fi
-    else
-      info "Installing fail2ban..."
-      if command -v apt-get &>/dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq fail2ban \
-          && success "fail2ban installed" \
-          || warn "Failed to install fail2ban. Run: sudo apt-get install fail2ban"
-      elif command -v dnf &>/dev/null; then
-        sudo dnf install -y -q fail2ban \
-          && success "fail2ban installed" \
-          || warn "Failed to install fail2ban. Run: sudo dnf install fail2ban"
-      elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm fail2ban \
-          && success "fail2ban installed" \
-          || warn "Failed to install fail2ban. Run: sudo pacman -S fail2ban"
-      else
-        warn "Package manager not detected. Install fail2ban manually for your distro."
-      fi
-
-      # Enable and start if installed
+  if [ "$IS_MAC" = true ]; then
+    info "Skipping fail2ban (Linux only)."
+  else
+    if [[ "$INSTALL_FAIL2BAN" =~ ^[Yy] ]]; then
       if command -v fail2ban-client &>/dev/null; then
-        sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
-          && success "fail2ban enabled and started" \
-          || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
+        success "fail2ban is already installed"
+        if systemctl is-active --quiet fail2ban 2>/dev/null; then
+          success "fail2ban service is running"
+        else
+          info "Starting fail2ban service..."
+          sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
+            && success "fail2ban enabled and started" \
+            || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
+        fi
+      else
+        info "Installing fail2ban..."
+        if command -v apt-get &>/dev/null; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq fail2ban \
+            && success "fail2ban installed" \
+            || warn "Failed to install fail2ban. Run: sudo apt-get install fail2ban"
+        elif command -v dnf &>/dev/null; then
+          sudo dnf install -y -q fail2ban \
+            && success "fail2ban installed" \
+            || warn "Failed to install fail2ban. Run: sudo dnf install fail2ban"
+        elif command -v pacman &>/dev/null; then
+          sudo pacman -S --noconfirm fail2ban \
+            && success "fail2ban installed" \
+            || warn "Failed to install fail2ban. Run: sudo pacman -S fail2ban"
+        else
+          warn "Package manager not detected. Install fail2ban manually for your distro."
+        fi
+        if command -v fail2ban-client &>/dev/null; then
+          sudo systemctl enable fail2ban 2>/dev/null && sudo systemctl start fail2ban 2>/dev/null \
+            && success "fail2ban enabled and started" \
+            || warn "Could not start fail2ban. Run: sudo systemctl enable --now fail2ban"
+        fi
       fi
-    fi
-
-    # Create a basic SSH jail config if none exists
-    local JAIL_LOCAL="/etc/fail2ban/jail.local"
-    if [ ! -f "$JAIL_LOCAL" ] && command -v fail2ban-client &>/dev/null; then
-      info "Creating basic SSH jail configuration..."
-      sudo tee "$JAIL_LOCAL" > /dev/null 2>&1 <<'JAIL_EOF'
+      local JAIL_LOCAL="/etc/fail2ban/jail.local"
+      if [ ! -f "$JAIL_LOCAL" ] && command -v fail2ban-client &>/dev/null; then
+        info "Creating basic SSH jail configuration..."
+        sudo tee "$JAIL_LOCAL" > /dev/null 2>&1 <<'JAIL_EOF'
 [DEFAULT]
 bantime  = 1h
 findtime = 10m
@@ -2552,17 +2596,18 @@ maxretry = 5
 [sshd]
 enabled = true
 JAIL_EOF
-      if [ $? -eq 0 ]; then
-        sudo systemctl restart fail2ban 2>/dev/null
-        success "SSH jail configured (ban 1h after 5 failures in 10m)"
-      else
-        warn "Could not create jail.local. Configure manually: /etc/fail2ban/jail.local"
+        if [ $? -eq 0 ]; then
+          sudo systemctl restart fail2ban 2>/dev/null
+          success "SSH jail configured (ban 1h after 5 failures in 10m)"
+        else
+          warn "Could not create jail.local. Configure manually: /etc/fail2ban/jail.local"
+        fi
+      elif [ -f "$JAIL_LOCAL" ]; then
+        info "jail.local already exists — keeping existing configuration"
       fi
-    elif [ -f "$JAIL_LOCAL" ]; then
-      info "jail.local already exists — keeping existing configuration"
+    else
+      info "Skipping fail2ban."
     fi
-  else
-    info "Skipping fail2ban."
   fi
 
   # ---- Memory Hybrid Plugin ----
@@ -2812,11 +2857,12 @@ install_skill_deps() {
     local BIN_NAME="$2"
     local VERSION="${3:-latest}"
     local ARCH="amd64"
-    [ "$(uname -m)" = "aarch64" ] && ARCH="arm64"
+    local MACHINE="$(uname -m)"
+    [ "$MACHINE" = "aarch64" ] || [ "$MACHINE" = "arm64" ] && ARCH="arm64"
 
     local TAG
     if [ "$VERSION" = "latest" ]; then
-      TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep -oP '"tag_name":\s*"\K[^"]+')
+      TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | tr -d '"' | sed 's/tag_name://' || true)
     else
       TAG="$VERSION"
     fi
@@ -2829,11 +2875,21 @@ install_skill_deps() {
     local VER="${TAG#v}"
     local BASE_NAME="${BIN_NAME}"
 
-    # Try common naming patterns
+    # Determine OS name for download URLs
+    local OS_NAME="linux"
+    [ "$IS_MAC" = true ] && OS_NAME="darwin"
+    local OS_TITLE="Linux"
+    [ "$IS_MAC" = true ] && OS_TITLE="Darwin"
+
+    # Try common naming patterns (lowercase and titlecase OS)
     local URLS=(
-      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${VER}_linux_${ARCH}.tar.gz"
-      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_linux_${ARCH}.tar.gz"
-      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}-linux-${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${VER}_${OS_NAME}_${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${OS_NAME}_${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}-${OS_NAME}-${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${VER}_${OS_TITLE}_${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${OS_TITLE}_${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}-${OS_TITLE}-${ARCH}.tar.gz"
+      "https://github.com/$REPO/releases/download/$TAG/${BASE_NAME}_${VER}_macOS_${ARCH}.tar.gz"
     )
 
     local TMPFILE="/tmp/${BIN_NAME}_release.tar.gz"
@@ -2860,7 +2916,7 @@ install_skill_deps() {
   # --- ffmpeg (video-frames skill) ---
   if ! command -v ffmpeg &>/dev/null; then
     info "Installing ffmpeg..."
-    apt-get install -y -qq ffmpeg 2>/dev/null \
+    install_pkg -y -qq ffmpeg 2>/dev/null \
       && success "ffmpeg installed" && INSTALLED=$((INSTALLED + 1)) \
       || { warn "ffmpeg install failed"; FAILED=$((FAILED + 1)); }
   else
@@ -2871,7 +2927,7 @@ install_skill_deps() {
   # --- tmux ---
   if ! command -v tmux &>/dev/null; then
     info "Installing tmux..."
-    apt-get install -y -qq tmux 2>/dev/null \
+    install_pkg -y -qq tmux 2>/dev/null \
       && success "tmux installed" && INSTALLED=$((INSTALLED + 1)) \
       || { warn "tmux install failed"; FAILED=$((FAILED + 1)); }
   else
@@ -2882,7 +2938,7 @@ install_skill_deps() {
   # --- jq (session-logs, trello) ---
   if ! command -v jq &>/dev/null; then
     info "Installing jq..."
-    apt-get install -y -qq jq 2>/dev/null \
+    install_pkg -y -qq jq 2>/dev/null \
       && success "jq installed" && INSTALLED=$((INSTALLED + 1)) \
       || { warn "jq install failed"; FAILED=$((FAILED + 1)); }
   else
@@ -2893,7 +2949,7 @@ install_skill_deps() {
   # --- ripgrep (session-logs) ---
   if ! command -v rg &>/dev/null; then
     info "Installing ripgrep..."
-    apt-get install -y -qq ripgrep 2>/dev/null \
+    install_pkg -y -qq ripgrep 2>/dev/null \
       && success "ripgrep installed" && INSTALLED=$((INSTALLED + 1)) \
       || { warn "ripgrep install failed"; FAILED=$((FAILED + 1)); }
   else
@@ -3042,14 +3098,18 @@ install_skill_deps() {
 
   if ! command -v gh &>/dev/null; then
     info "Installing GitHub CLI (gh)..."
-    if command -v apt-get &>/dev/null; then
-      (type -p wget >/dev/null || apt-get install -y -qq wget) \
+    if [ "$IS_MAC" = true ]; then
+      brew install gh 2>/dev/null \
+        && success "gh CLI installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "gh install failed — install manually: https://cli.github.com"; FAILED=$((FAILED + 1)); }
+    elif command -v apt-get &>/dev/null; then
+      (type -p wget >/dev/null || install_pkg -y -qq wget) \
         && mkdir -p -m 755 /etc/apt/keyrings \
         && out=$(mktemp) && wget -nv -O"$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg 2>/dev/null \
         && cat "$out" | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
         && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
         && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null \
-        && apt-get update -qq && apt-get install gh -y -qq \
+        && apt-get update -qq && install_pkg gh -y -qq \
         && success "gh CLI installed" && INSTALLED=$((INSTALLED + 1)) \
         || { warn "gh install failed — install manually: https://cli.github.com"; FAILED=$((FAILED + 1)); }
       rm -f "$out" 2>/dev/null
@@ -3071,7 +3131,11 @@ install_skill_deps() {
 
   if ! command -v op &>/dev/null; then
     info "Installing 1Password CLI..."
-    if command -v apt-get &>/dev/null; then
+    if [ "$IS_MAC" = true ]; then
+      brew install --cask 1password-cli 2>/dev/null \
+        && success "1Password CLI installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "1Password CLI install failed — install manually: https://1password.com/downloads/command-line/"; FAILED=$((FAILED + 1)); }
+    elif command -v apt-get &>/dev/null; then
       # Clean up any stale 1Password GPG keys/repos first
       rm -f /usr/share/keyrings/1password-archive-keyring.gpg 2>/dev/null
       rm -f /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg 2>/dev/null
@@ -3089,13 +3153,13 @@ install_skill_deps() {
         && curl -sS https://downloads.1password.com/linux/keys/1password.asc \
           | gpg --batch --yes --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg 2>/dev/null \
         && chmod a+r /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg \
-        && apt-get update -qq 2>/dev/null && apt-get install -y -qq 1password-cli \
+        && apt-get update -qq 2>/dev/null && install_pkg -y -qq 1password-cli \
         && success "1Password CLI installed" && INSTALLED=$((INSTALLED + 1)) \
         || { warn "1Password CLI install failed"; FAILED=$((FAILED + 1));
              # Clean up failed repo so it doesn't break future apt operations
              rm -f /etc/apt/sources.list.d/1password.list 2>/dev/null; }
     else
-      warn "Skipping 1Password CLI (no apt)"
+      warn "Skipping 1Password CLI (unsupported platform)"
       FAILED=$((FAILED + 1))
     fi
   else
@@ -3113,9 +3177,15 @@ install_skill_deps() {
   # --- sag (ElevenLabs TTS) ---
   if ! command -v sag &>/dev/null; then
     info "Installing sag (ElevenLabs TTS)..."
-    gh_release_install "steipete/sag" "sag" \
-      && success "sag installed" && INSTALLED=$((INSTALLED + 1)) \
-      || { warn "sag install failed — https://github.com/steipete/sag/releases"; FAILED=$((FAILED + 1)); }
+    if [ "$IS_MAC" = true ]; then
+      brew install steipete/tap/sag 2>/dev/null \
+        && success "sag installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "sag install failed — https://github.com/steipete/sag/releases"; FAILED=$((FAILED + 1)); }
+    else
+      gh_release_install "steipete/sag" "sag" \
+        && success "sag installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "sag install failed — https://github.com/steipete/sag/releases"; FAILED=$((FAILED + 1)); }
+    fi
   else
     success "sag ✓"
     SKIPPED=$((SKIPPED + 1))
@@ -3124,9 +3194,15 @@ install_skill_deps() {
   # --- gog (Gmail/Calendar/Drive CLI) ---
   if ! command -v gog &>/dev/null && ! command -v gogcli &>/dev/null; then
     info "Installing gog (Google Workspace CLI)..."
-    gh_release_install "steipete/gogcli" "gogcli" \
-      && success "gog installed" && INSTALLED=$((INSTALLED + 1)) \
-      || { warn "gog install failed — try: go install github.com/steipete/gogcli@latest"; FAILED=$((FAILED + 1)); }
+    if [ "$IS_MAC" = true ]; then
+      brew install steipete/tap/gogcli 2>/dev/null \
+        && success "gog installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "gog install failed — try: go install github.com/steipete/gogcli@latest"; FAILED=$((FAILED + 1)); }
+    else
+      gh_release_install "steipete/gogcli" "gogcli" \
+        && success "gog installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "gog install failed — try: go install github.com/steipete/gogcli@latest"; FAILED=$((FAILED + 1)); }
+    fi
   else
     success "gog ✓"
     SKIPPED=$((SKIPPED + 1))
@@ -3135,9 +3211,15 @@ install_skill_deps() {
   # --- goplaces (Google Places CLI) ---
   if ! command -v goplaces &>/dev/null; then
     info "Installing goplaces..."
-    gh_release_install "steipete/goplaces" "goplaces" \
-      && success "goplaces installed" && INSTALLED=$((INSTALLED + 1)) \
-      || { warn "goplaces install failed"; FAILED=$((FAILED + 1)); }
+    if [ "$IS_MAC" = true ]; then
+      brew install steipete/tap/goplaces 2>/dev/null \
+        && success "goplaces installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "goplaces install failed"; FAILED=$((FAILED + 1)); }
+    else
+      gh_release_install "steipete/goplaces" "goplaces" \
+        && success "goplaces installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "goplaces install failed"; FAILED=$((FAILED + 1)); }
+    fi
   else
     success "goplaces ✓"
     SKIPPED=$((SKIPPED + 1))
@@ -3146,9 +3228,15 @@ install_skill_deps() {
   # --- camsnap (camera snapshot CLI) ---
   if ! command -v camsnap &>/dev/null; then
     info "Installing camsnap..."
-    gh_release_install "steipete/camsnap" "camsnap" \
-      && success "camsnap installed" && INSTALLED=$((INSTALLED + 1)) \
-      || { warn "camsnap install failed"; FAILED=$((FAILED + 1)); }
+    if [ "$IS_MAC" = true ]; then
+      brew install steipete/tap/camsnap 2>/dev/null \
+        && success "camsnap installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "camsnap install failed"; FAILED=$((FAILED + 1)); }
+    else
+      gh_release_install "steipete/camsnap" "camsnap" \
+        && success "camsnap installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "camsnap install failed"; FAILED=$((FAILED + 1)); }
+    fi
   else
     success "camsnap ✓"
     SKIPPED=$((SKIPPED + 1))
@@ -3157,24 +3245,55 @@ install_skill_deps() {
   # --- openhue (Philips Hue CLI) ---
   if ! command -v openhue &>/dev/null; then
     info "Installing openhue..."
-    local OPENHUE_ARCH="x86_64"
-    [ "$(uname -m)" = "aarch64" ] && OPENHUE_ARCH="arm64"
-    local OPENHUE_TAG
-    OPENHUE_TAG=$(curl -s "https://api.github.com/repos/openhue/openhue-cli/releases/latest" 2>/dev/null | grep -oP '"tag_name":\s*"\K[^"]+')
-    if [ -n "$OPENHUE_TAG" ]; then
-      local OPENHUE_URL="https://github.com/openhue/openhue-cli/releases/download/$OPENHUE_TAG/openhue_Linux_${OPENHUE_ARCH}.tar.gz"
-      if curl -fsSL -o /tmp/openhue.tar.gz "$OPENHUE_URL" 2>/dev/null; then
-        (cd /tmp && tar xzf openhue.tar.gz openhue 2>/dev/null && mv openhue "$BIN_DIR/" && chmod +x "$BIN_DIR/openhue")
-        rm -f /tmp/openhue.tar.gz
-        success "openhue installed"
-        INSTALLED=$((INSTALLED + 1))
+    if [ "$IS_MAC" = true ]; then
+      # macOS uses Darwin_all universal binary
+      local OPENHUE_TAG
+      OPENHUE_TAG=$(curl -s "https://api.github.com/repos/openhue/openhue-cli/releases/latest" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | tr -d '"' | sed 's/tag_name://') || true
+      if [ -n "$OPENHUE_TAG" ]; then
+        local OPENHUE_URL="https://github.com/openhue/openhue-cli/releases/download/$OPENHUE_TAG/openhue_Darwin_all.tar.gz"
+        if curl -fsSL -o /tmp/openhue.tar.gz "$OPENHUE_URL" 2>/dev/null; then
+          (cd /tmp && tar xzf openhue.tar.gz openhue 2>/dev/null && mv openhue "$BIN_DIR/" && chmod +x "$BIN_DIR/openhue") || true
+          rm -f /tmp/openhue.tar.gz
+          if command -v openhue &>/dev/null || [ -f "$BIN_DIR/openhue" ]; then
+            success "openhue installed"
+            INSTALLED=$((INSTALLED + 1))
+          else
+            warn "openhue install failed"
+            FAILED=$((FAILED + 1))
+          fi
+        else
+          warn "openhue download failed"
+          FAILED=$((FAILED + 1))
+        fi
       else
-        warn "openhue download failed"
+        warn "Could not determine openhue version"
         FAILED=$((FAILED + 1))
       fi
     else
-      warn "Could not determine openhue version"
-      FAILED=$((FAILED + 1))
+      local OPENHUE_ARCH="x86_64"
+      [ "$(uname -m)" = "aarch64" ] && OPENHUE_ARCH="arm64"
+      local OPENHUE_TAG
+      OPENHUE_TAG=$(curl -s "https://api.github.com/repos/openhue/openhue-cli/releases/latest" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | tr -d '"' | sed 's/tag_name://') || true
+      if [ -n "$OPENHUE_TAG" ]; then
+        local OPENHUE_URL="https://github.com/openhue/openhue-cli/releases/download/$OPENHUE_TAG/openhue_Linux_${OPENHUE_ARCH}.tar.gz"
+        if curl -fsSL -o /tmp/openhue.tar.gz "$OPENHUE_URL" 2>/dev/null; then
+          (cd /tmp && tar xzf openhue.tar.gz openhue 2>/dev/null && mv openhue "$BIN_DIR/" && chmod +x "$BIN_DIR/openhue") || true
+          rm -f /tmp/openhue.tar.gz
+          if command -v openhue &>/dev/null || [ -f "$BIN_DIR/openhue" ]; then
+            success "openhue installed"
+            INSTALLED=$((INSTALLED + 1))
+          else
+            warn "openhue install failed"
+            FAILED=$((FAILED + 1))
+          fi
+        else
+          warn "openhue download failed"
+          FAILED=$((FAILED + 1))
+        fi
+      else
+        warn "Could not determine openhue version"
+        FAILED=$((FAILED + 1))
+      fi
     fi
   else
     success "openhue ✓"
@@ -3184,24 +3303,30 @@ install_skill_deps() {
   # --- himalaya (IMAP email CLI) ---
   if ! command -v himalaya &>/dev/null; then
     info "Installing himalaya (email CLI)..."
-    local HIMA_ARCH="x86_64"
-    [ "$(uname -m)" = "aarch64" ] && HIMA_ARCH="aarch64"
-    local HIMA_TAG
-    HIMA_TAG=$(curl -s "https://api.github.com/repos/pimalaya/himalaya/releases/latest" 2>/dev/null | grep -oP '"tag_name":\s*"\K[^"]+')
-    if [ -n "$HIMA_TAG" ]; then
-      local HIMA_URL="https://github.com/pimalaya/himalaya/releases/download/$HIMA_TAG/himalaya.${HIMA_ARCH}-linux.tgz"
-      if curl -fsSL -o /tmp/himalaya.tgz "$HIMA_URL" 2>/dev/null; then
-        (cd /tmp && tar xzf himalaya.tgz && mv himalaya "$BIN_DIR/" && chmod +x "$BIN_DIR/himalaya")
-        rm -f /tmp/himalaya.tgz
-        success "himalaya installed"
-        INSTALLED=$((INSTALLED + 1))
+    if [ "$IS_MAC" = true ]; then
+      brew install himalaya 2>/dev/null \
+        && success "himalaya installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "himalaya install failed"; FAILED=$((FAILED + 1)); }
+    else
+      local HIMA_ARCH="x86_64"
+      [ "$(uname -m)" = "aarch64" ] && HIMA_ARCH="aarch64"
+      local HIMA_TAG
+      HIMA_TAG=$(curl -s "https://api.github.com/repos/pimalaya/himalaya/releases/latest" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | tr -d '"' | sed 's/tag_name://')
+      if [ -n "$HIMA_TAG" ]; then
+        local HIMA_URL="https://github.com/pimalaya/himalaya/releases/download/$HIMA_TAG/himalaya.${HIMA_ARCH}-linux.tgz"
+        if curl -fsSL -o /tmp/himalaya.tgz "$HIMA_URL" 2>/dev/null; then
+          (cd /tmp && tar xzf himalaya.tgz && mv himalaya "$BIN_DIR/" && chmod +x "$BIN_DIR/himalaya")
+          rm -f /tmp/himalaya.tgz
+          success "himalaya installed"
+          INSTALLED=$((INSTALLED + 1))
+        else
+          warn "himalaya download failed"
+          FAILED=$((FAILED + 1))
+        fi
       else
-        warn "himalaya download failed"
+        warn "Could not determine himalaya version"
         FAILED=$((FAILED + 1))
       fi
-    else
-      warn "Could not determine himalaya version"
-      FAILED=$((FAILED + 1))
     fi
   else
     success "himalaya ✓"
@@ -3211,9 +3336,15 @@ install_skill_deps() {
   # --- spogo (Spotify CLI) ---
   if ! command -v spogo &>/dev/null; then
     info "Installing spogo (Spotify CLI)..."
-    gh_release_install "steipete/spogo" "spogo" \
-      && success "spogo installed" && INSTALLED=$((INSTALLED + 1)) \
-      || { warn "spogo install failed"; FAILED=$((FAILED + 1)); }
+    if [ "$IS_MAC" = true ]; then
+      brew install steipete/tap/spogo 2>/dev/null \
+        && success "spogo installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "spogo install failed"; FAILED=$((FAILED + 1)); }
+    else
+      gh_release_install "steipete/spogo" "spogo" \
+        && success "spogo installed" && INSTALLED=$((INSTALLED + 1)) \
+        || { warn "spogo install failed"; FAILED=$((FAILED + 1)); }
+    fi
   else
     success "spogo ✓"
     SKIPPED=$((SKIPPED + 1))
@@ -3349,6 +3480,11 @@ install_skill_deps() {
 # ============================================================
 
 harden_server() {
+  if [ "$IS_MAC" = true ]; then
+    info "Skipping server hardening on macOS."
+    return
+  fi
+
   echo ""
   echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
   echo -e "${GREEN}║${NC}  ${BOLD}🛡️  Server Hardening${NC}                        ${GREEN}║${NC}"
@@ -3401,7 +3537,7 @@ harden_server() {
     fi
   else
     info "Installing UFW..."
-    if apt-get install -y -qq ufw 2>/dev/null; then
+    if install_pkg -y -qq ufw 2>/dev/null; then
       ufw allow 22/tcp comment "SSH" >/dev/null 2>&1
       if [ "${CONSOLE_SECURITY:-1}" = "2" ] && [ -n "${CONSOLE_DOMAIN:-}" ]; then
         ufw allow 80/tcp comment "HTTP (Caddy redirect)" >/dev/null 2>&1
@@ -3411,7 +3547,7 @@ harden_server() {
       success "UFW installed and enabled (SSH allowed)"
       CHANGES_MADE=true
     else
-      warn "Could not install UFW. Install manually: apt-get install ufw"
+      warn "Could not install UFW. Install manually: install_pkg ufw"
     fi
   fi
 
